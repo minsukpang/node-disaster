@@ -846,7 +846,7 @@
             }
         }        // 소켓 연결 초기화
         function initSocketConnection() {
-            socket = io('http://localhost:3000');
+            socket = io('https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app');
             
             // 새 위험 지역 추가 이벤트 수신
             socket.on('danger-added', function(dangerZone) {
