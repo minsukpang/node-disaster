@@ -165,6 +165,10 @@
             display: none;
         }
     </style>
+    <!-- 한글 폰트 추가 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- 왼쪽 사이드바 - 위험 지역 목록 -->
@@ -296,6 +300,9 @@
         </div>
     </div>
 
+    <!-- 소켓.IO 클라이언트 라이브러리 -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    
     <!-- Google Maps API 스크립트 -->
     <script>
         // 전역 변수
@@ -305,6 +312,16 @@
         let selectedPosition = null;
         let selectedLocationType = null;
         let socket;
+        
+        // API 기본 URL
+        const API_BASE_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000' 
+            : window.location.origin;
+        
+        // Socket.io 연결 URL
+        const SOCKET_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:3000'
+            : window.location.origin;
         
         // Google Maps 초기화
         function initMap() {
@@ -330,7 +347,16 @@
         
         // 소켓 연결 초기화
         function initSocketConnection() {
-            socket = io('http://localhost:3000');
+            socket = io(SOCKET_URL);
+            
+            // 연결 이벤트 로깅
+            socket.on('connect', function() {
+                console.log('Socket.IO 연결됨');
+            });
+            
+            socket.on('connect_error', function(error) {
+                console.error('Socket.IO 연결 오류:', error);
+            });
             
             // 새 위험 지역 추가 이벤트 수신
             socket.on('danger-added', function(dangerZone) {
@@ -344,6 +370,20 @@
                 addShelterToMap(shelter);
                 addShelterToList(shelter);
                 showNotification('새로운 대피소가 추가되었습니다: ' + shelter.name);
+            });
+            
+            // 위험 지역 삭제 이벤트 수신
+            socket.on('danger-deleted', function(dangerZoneId) {
+                removeDangerZoneFromMap(dangerZoneId);
+                removeDangerZoneFromList(dangerZoneId);
+                showNotification('위험 지역이 삭제되었습니다.');
+            });
+            
+            // 대피소 삭제 이벤트 수신
+            socket.on('shelter-deleted', function(shelterId) {
+                removeShelterFromMap(shelterId);
+                removeShelterFromList(shelterId);
+                showNotification('대피소가 삭제되었습니다.');
             });
         }
         
@@ -413,7 +453,7 @@
             };
             
             try {
-                const response = await fetch('http://localhost:3000/api/danger-zones', {
+                const response = await fetch(`${API_BASE_URL}/api/danger-zones`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -429,7 +469,7 @@
                     showNotification('위험 지역이 추가되었습니다.');
                     
                     // 다른 사용자에게 실시간으로 알림
-                    if (socket) {
+                    if (socket && socket.connected) {
                         socket.emit('new-danger', savedZone);
                     }
                 } else {
@@ -464,7 +504,7 @@
             };
             
             try {
-                const response = await fetch('http://localhost:3000/api/shelters', {
+                const response = await fetch(`${API_BASE_URL}/api/shelters`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -480,7 +520,7 @@
                     showNotification('대피소가 추가되었습니다.');
                     
                     // 다른 사용자에게 실시간으로 알림
-                    if (socket) {
+                    if (socket && socket.connected) {
                         socket.emit('new-shelter', savedShelter);
                     }
                 } else {
@@ -511,13 +551,27 @@
         // 위험 지역 로드
         async function loadDangerZones() {
             try {
-                const response = await fetch('http://localhost:3000/api/danger-zones');
+                const response = await fetch(`${API_BASE_URL}/api/danger-zones`);
                 if (response.ok) {
                     const dangerZones = await response.json();
                     
-                    // 기존 위험 구역 마커 삭제
-                    dangerCircles.forEach(circle => circle.setMap(null));
+                    // 기존 위험 구역 마커와 원 제거
+                    for (let i = 0; i < dangerCircles.length; i++) {
+                        if (dangerCircles[i].circle) {
+                            dangerCircles[i].circle.setMap(null);
+                        }
+                    }
                     dangerCircles = [];
+                    
+                    // 위험 지역 관련 마커 제거
+                    markers = markers.filter(marker => {
+                        const isDangerMarker = marker.title && dangerZones.some(zone => zone.name === marker.title);
+                        if (isDangerMarker) {
+                            marker.setMap(null);
+                            return false;
+                        }
+                        return true;
+                    });
                     
                     // 리스트 비우기
                     document.getElementById('danger-list').innerHTML = '';
@@ -527,6 +581,8 @@
                         addDangerZoneToMap(zone);
                         addDangerZoneToList(zone);
                     });
+                } else {
+                    console.error('위험 지역 로드 실패:', response.status);
                 }
             } catch (error) {
                 console.error('Error loading danger zones:', error);
@@ -536,13 +592,19 @@
         // 대피소 로드
         async function loadShelters() {
             try {
-                const response = await fetch('http://localhost:3000/api/shelters');
+                const response = await fetch(`${API_BASE_URL}/api/shelters`);
                 if (response.ok) {
                     const shelters = await response.json();
                     
-                    // 마커 초기화
-                    markers.forEach(marker => marker.setMap(null));
-                    markers = [];
+                    // 대피소 관련 마커 제거
+                    markers = markers.filter(marker => {
+                        const isShelterMarker = marker.title && shelters.some(shelter => shelter.name === marker.title);
+                        if (isShelterMarker) {
+                            marker.setMap(null);
+                            return false;
+                        }
+                        return true;
+                    });
                     
                     // 리스트 비우기
                     document.getElementById('shelter-list').innerHTML = '';
@@ -552,6 +614,8 @@
                         addShelterToMap(shelter);
                         addShelterToList(shelter);
                     });
+                } else {
+                    console.error('대피소 로드 실패:', response.status);
                 }
             } catch (error) {
                 console.error('Error loading shelters:', error);
@@ -739,6 +803,146 @@
             }, 3000);
         }
         
+        // 지도에서 위험 지역 제거
+        function removeDangerZoneFromMap(dangerZoneId) {
+            // 위험 지역 원 찾기 및 제거
+            for (let i = 0; i < dangerCircles.length; i++) {
+                if (dangerCircles[i].id === dangerZoneId) {
+                    dangerCircles[i].circle.setMap(null);
+                    dangerCircles.splice(i, 1);
+                    break;
+                }
+            }
+            
+            // 위험 지역 마커 찾기 및 제거
+            for (let i = 0; i < markers.length; i++) {
+                if (markers[i].id === dangerZoneId) {
+                    markers[i].setMap(null);
+                    markers.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        
+        // 목록에서 위험 지역 제거
+        function removeDangerZoneFromList(dangerZoneId) {
+            const item = document.querySelector(`.danger-item[data-id="${dangerZoneId}"]`);
+            if (item) {
+                item.remove();
+            }
+        }
+        
+        // 지도에서 대피소 제거
+        function removeShelterFromMap(shelterId) {
+            for (let i = 0; i < markers.length; i++) {
+                if (markers[i].id === shelterId) {
+                    markers[i].setMap(null);
+                    markers.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        
+        // 목록에서 대피소 제거
+        function removeShelterFromList(shelterId) {
+            const item = document.querySelector(`.shelter-item[data-id="${shelterId}"]`);
+            if (item) {
+                item.remove();
+            }
+        }
+        
+        // 위험 지역 삭제
+        async function deleteDangerZone() {
+            const password = document.getElementById('danger-admin-password').value;
+            const dangerZoneId = document.getElementById('danger-admin-id').value.trim();
+            
+            if (!password) {
+                alert('관리자 암호를 입력해주세요.');
+                return;
+            }
+            
+            if (!dangerZoneId) {
+                alert('삭제할 위험 지역의 ID를 입력해주세요.');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/danger-zones/${dangerZoneId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Password': password
+                    }
+                });
+                
+                if (response.ok) {
+                    document.getElementById('danger-admin-password').value = '';
+                    document.getElementById('danger-admin-id').value = '';
+                    
+                    // 지도와 목록에서 위험 지역 제거
+                    removeDangerZoneFromMap(dangerZoneId);
+                    removeDangerZoneFromList(dangerZoneId);
+                    
+                    showNotification('위험 지역이 삭제되었습니다.');
+                } else if (response.status === 401) {
+                    alert('관리자 암호가 올바르지 않습니다.');
+                } else if (response.status === 404) {
+                    alert('해당 ID의 위험 지역을 찾을 수 없습니다.');
+                } else {
+                    alert('위험 지역을 삭제하는 중 오류가 발생했습니다.');
+                }
+            } catch (error) {
+                console.error('Error deleting danger zone:', error);
+                alert('서버 연결 중 오류가 발생했습니다.');
+            }
+        }
+        
+        // 대피소 삭제
+        async function deleteShelter() {
+            const password = document.getElementById('shelter-admin-password').value;
+            const shelterId = document.getElementById('shelter-admin-id').value.trim();
+            
+            if (!password) {
+                alert('관리자 암호를 입력해주세요.');
+                return;
+            }
+            
+            if (!shelterId) {
+                alert('삭제할 대피소의 ID를 입력해주세요.');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/shelters/${shelterId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Password': password
+                    }
+                });
+                
+                if (response.ok) {
+                    document.getElementById('shelter-admin-password').value = '';
+                    document.getElementById('shelter-admin-id').value = '';
+                    
+                    // 지도와 목록에서 대피소 제거
+                    removeShelterFromMap(shelterId);
+                    removeShelterFromList(shelterId);
+                    
+                    showNotification('대피소가 삭제되었습니다.');
+                } else if (response.status === 401) {
+                    alert('관리자 암호가 올바르지 않습니다.');
+                } else if (response.status === 404) {
+                    alert('해당 ID의 대피소를 찾을 수 없습니다.');
+                } else {
+                    alert('대피소를 삭제하는 중 오류가 발생했습니다.');
+                }
+            } catch (error) {
+                console.error('Error deleting shelter:', error);
+                alert('서버 연결 중 오류가 발생했습니다.');
+            }
+        }
+        
         // 이벤트 리스너 등록
         document.addEventListener('DOMContentLoaded', function() {
             // 위험 지역 버튼 이벤트
@@ -792,184 +996,17 @@
             // 대피소 삭제 버튼 이벤트 
             document.getElementById('delete-shelter').addEventListener('click', deleteShelter);
             
-            // 주기적으로 데이터 새로고침 (30초마다)
+            // 주기적으로 데이터 새로고침 (60초마다)
             setInterval(() => {
                 loadDangerZones();
                 loadShelters();
-            }, 30000);
+            }, 60000);
         });
-        // 지도에서 위험 지역 제거
-        function removeDangerZoneFromMap(dangerZoneId) {
-            // 위험 지역 원 찾기 및 제거
-            for (let i = 0; i < dangerCircles.length; i++) {
-                if (dangerCircles[i].id === dangerZoneId) {
-                    dangerCircles[i].circle.setMap(null);
-                    dangerCircles.splice(i, 1);
-                    break;
-                }
-            }
-            
-            // 위험 지역 마커 찾기 및 제거
-            for (let i = 0; i < markers.length; i++) {
-                if (markers[i].id === dangerZoneId) {
-                    markers[i].setMap(null);
-                    markers.splice(i, 1);
-                    break;
-                }
-            }
-        }
-        
-        // 목록에서 위험 지역 제거
-        function removeDangerZoneFromList(dangerZoneId) {
-            const item = document.querySelector(`.danger-item[data-id="${dangerZoneId}"]`);
-            if (item) {
-                item.remove();
-            }
-        }
-        
-        // 지도에서 대피소 제거
-        function removeShelterFromMap(shelterId) {
-            for (let i = 0; i < markers.length; i++) {
-                if (markers[i].id === shelterId) {
-                    markers[i].setMap(null);
-                    markers.splice(i, 1);
-                    break;
-                }
-            }
-        }
-        
-        // 목록에서 대피소 제거
-        function removeShelterFromList(shelterId) {
-            const item = document.querySelector(`.shelter-item[data-id="${shelterId}"]`);
-            if (item) {
-                item.remove();
-            }
-        }        // 소켓 연결 초기화
-        function initSocketConnection() {
-            socket = io('http://localhost:3000');
-            
-            // 새 위험 지역 추가 이벤트 수신
-            socket.on('danger-added', function(dangerZone) {
-                addDangerZoneToMap(dangerZone);
-                addDangerZoneToList(dangerZone);
-                showNotification('새로운 위험 지역이 추가되었습니다: ' + dangerZone.name);
-            });
-            
-            // 새 대피소 추가 이벤트 수신
-            socket.on('shelter-added', function(shelter) {
-                addShelterToMap(shelter);
-                addShelterToList(shelter);
-                showNotification('새로운 대피소가 추가되었습니다: ' + shelter.name);
-            });
-            
-            // 위험 지역 삭제 이벤트 수신
-            socket.on('danger-deleted', function(dangerZoneId) {
-                // 지도에서 위험 지역 마커와 원 제거
-                removeDangerZoneFromMap(dangerZoneId);
-                // 목록에서 위험 지역 제거
-                removeDangerZoneFromList(dangerZoneId);
-                showNotification('위험 지역이 삭제되었습니다.');
-            });
-            
-            // 대피소 삭제 이벤트 수신
-            socket.on('shelter-deleted', function(shelterId) {
-                // 지도에서 대피소 마커 제거
-                removeShelterFromMap(shelterId);
-                // 목록에서 대피소 제거
-                removeShelterFromList(shelterId);
-                showNotification('대피소가 삭제되었습니다.');
-            });
-        }        // 위험 지역 삭제
-        async function deleteDangerZone() {
-            const password = document.getElementById('danger-admin-password').value;
-            const dangerZoneId = document.getElementById('danger-admin-id').value.trim();
-            
-            if (!password) {
-                alert('관리자 암호를 입력해주세요.');
-                return;
-            }
-            
-            if (!dangerZoneId) {
-                alert('삭제할 위험 지역의 ID를 입력해주세요.');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`http://localhost:3000/api/danger-zones/${dangerZoneId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Password': password
-                    }
-                });
-                
-                if (response.ok) {
-                    document.getElementById('danger-admin-password').value = '';
-                    document.getElementById('danger-admin-id').value = '';
-                    showNotification('위험 지역이 삭제되었습니다.');
-                    loadDangerZones(); // 목록 새로고침
-                } else if (response.status === 401) {
-                    alert('관리자 암호가 올바르지 않습니다.');
-                } else if (response.status === 404) {
-                    alert('해당 ID의 위험 지역을 찾을 수 없습니다.');
-                } else {
-                    alert('위험 지역을 삭제하는 중 오류가 발생했습니다.');
-                }
-            } catch (error) {
-                console.error('Error deleting danger zone:', error);
-                alert('서버 연결 중 오류가 발생했습니다.');
-            }
-        }
-        
-        // 대피소 삭제
-        async function deleteShelter() {
-            const password = document.getElementById('shelter-admin-password').value;
-            const shelterId = document.getElementById('shelter-admin-id').value.trim();
-            
-            if (!password) {
-                alert('관리자 암호를 입력해주세요.');
-                return;
-            }
-            
-            if (!shelterId) {
-                alert('삭제할 대피소의 ID를 입력해주세요.');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`http://localhost:3000/api/shelters/${shelterId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Password': password
-                    }
-                });
-                
-                if (response.ok) {
-                    document.getElementById('shelter-admin-password').value = '';
-                    document.getElementById('shelter-admin-id').value = '';
-                    showNotification('대피소가 삭제되었습니다.');
-                    loadShelters(); // 목록 새로고침
-                } else if (response.status === 401) {
-                    alert('관리자 암호가 올바르지 않습니다.');
-                } else if (response.status === 404) {
-                    alert('해당 ID의 대피소를 찾을 수 없습니다.');
-                } else {
-                    alert('대피소를 삭제하는 중 오류가 발생했습니다.');
-                }
-            } catch (error) {
-                console.error('Error deleting shelter:', error);
-                alert('서버 연결 중 오류가 발생했습니다.');
-            }
-        }
     </script>
     
-    <!-- 소켓.IO 클라이언트 라이브러리 -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    
-    <!-- 이 부분은 실제 API 키로 대체해야 합니다 -->
+    <!-- Google Maps API 스크립트 - 배포 시 실제 API 키로 교체 -->
     <script async defer
-        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC8YdPqow8FGlMJm04XOkm8KIBnKQOpco4&callback=initMap">
+        src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap">
     </script>
 </body>
 </html>
