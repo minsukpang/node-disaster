@@ -330,7 +330,7 @@
         
         // 소켓 연결 초기화
         function initSocketConnection() {
-            socket = io('http://localhost:3000');
+            socket = io('https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app');
             
             // 새 위험 지역 추가 이벤트 수신
             socket.on('danger-added', function(dangerZone) {
@@ -413,7 +413,7 @@
             };
             
             try {
-                const response = await fetch('http://localhost:3000/api/danger-zones', {
+                const response = await fetch('https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app/api/danger-zones', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -464,7 +464,7 @@
             };
             
             try {
-                const response = await fetch('http://localhost:3000/api/shelters', {
+                const response = await fetch('https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app/api/shelters', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -511,7 +511,7 @@
         // 위험 지역 로드
         async function loadDangerZones() {
             try {
-                const response = await fetch('http://localhost:3000/api/danger-zones');
+                const response = await fetch('https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app/api/danger-zones');
                 if (response.ok) {
                     const dangerZones = await response.json();
                     
@@ -536,7 +536,7 @@
         // 대피소 로드
         async function loadShelters() {
             try {
-                const response = await fetch('http://localhost:3000/api/shelters');
+                const response = await fetch('https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app/api/shelters');
                 if (response.ok) {
                     const shelters = await response.json();
                     
@@ -895,7 +895,7 @@
             }
             
             try {
-                const response = await fetch(`http://localhost:3000/api/danger-zones/${dangerZoneId}`, {
+                const response = await fetch(`https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app/api/danger-zones/${dangerZoneId}`, {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
@@ -937,7 +937,7 @@
             }
             
             try {
-                const response = await fetch(`http://localhost:3000/api/shelters/${shelterId}`, {
+                const response = await fetch(`https://port-0-node-disaster-m9fwp33f673f4ad4.sel4.cloudtype.app/api/shelters/${shelterId}`, {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
