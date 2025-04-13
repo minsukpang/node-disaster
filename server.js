@@ -244,3 +244,8 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+// 서버 시작
+server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
