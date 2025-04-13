@@ -1,4 +1,4 @@
-// server.js
+// server.js - Cloud Type 배포용으로 수정
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -9,11 +9,13 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 관리자 비밀번호 설정 - 실제 운영 환경에서는 환경 변수로 관리하는 것이 좋습니다.
-const ADMIN_PASSWORD = '7628';
+// 관리자 비밀번호 설정 - 환경 변수로 관리
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '7628';
 
-// 데이터 저장 경로
-const DATA_DIR = path.join(__dirname, 'data');
+// 데이터 저장 경로 - Cloud Type 배포 환경 대응
+const DATA_DIR = process.env.NODE_ENV === 'production' 
+  ? '/tmp/data' 
+  : path.join(__dirname, 'data');
 const DANGER_ZONES_FILE = path.join(DATA_DIR, 'danger_zones.json');
 const SHELTERS_FILE = path.join(DATA_DIR, 'shelters.json');
 
@@ -31,8 +33,26 @@ if (!fs.existsSync(SHELTERS_FILE)) {
     fs.writeFileSync(SHELTERS_FILE, '[]', 'utf8');
 }
 
-// 미들웨어 설정
-app.use(cors());
+// 미들웨어 설정 - CORS 설정 업데이트
+const allowedOrigins = [
+    'https://your-cloudtype-domain.cloudtype.app', 
+    'http://localhost:3000',
+    // 클라이언트 도메인을 여기에 추가
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // origin이 없거나 허용된 목록에 있는 경우
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('CORS policy violation'));
+        }
+    },
+    methods: ["GET", "POST", "DELETE"],
+    credentials: true
+}));
+
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
@@ -215,8 +235,9 @@ const socketIo = require('socket.io');
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: allowedOrigins,
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
@@ -240,9 +261,12 @@ io.on('connection', (socket) => {
     });
 });
 
-// 서버 시작
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// 루트 경로에 상태 확인 엔드포인트 추가
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'online', 
+        message: '재난 대피 지도 API 서버가 실행 중입니다.' 
+    });
 });
 
 // 서버 시작
